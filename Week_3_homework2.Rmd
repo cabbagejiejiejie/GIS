@@ -1,0 +1,149 @@
+---
+title: "Week_3_homework2"
+output: html_document
+date: "2023-10-20"
+---
+## 1. load data
+### 1.1 load geopackage
+```{r}
+library(sf)
+library(here)
+st_layers(here::here('Week_3_prac','gadm41_FRA.gpkg'))
+# load the spatial data
+Fraoutline <- st_read(here::here('Week_3_prac','gadm41_FRA.gpkg'),layer='ADM_ADM_0')
+# check the outline
+plot(Fraoutline$geom)
+```
+### 1.2 load and manipulate city location
+```{r}
+library(readr)
+library(janitor)
+library(dplyr)
+Worldcities <- read_csv(here::here('Week_3_prac','World_Cities.csv')) %>%
+  clean_names()
+# filter French cities
+Fracities <- Worldcities %>%
+  filter(cntry_name=='France')
+```
+
+## 1.3 load rast data
+```{r}
+library(fs)
+library(tidyverse)
+library(terra)
+# 识别.tif文件并导入
+listfiles <- dir_info('Week_3_prac') %>%
+  filter(str_detect(path,'.tif')) %>%
+  dplyr::select(path) %>%
+  pull()
+worldclimtemp <- listfiles %>%
+  terra::rast()
+worldclimtemp
+```
+```{r}
+# rename the name of each layer
+month <- c("Jan1", "Feb1", "Mar1", "Apr1", "May1", "Jun1", 
+           "Jul1", "Aug1", "Sep1", "Oct1", "Nov1", "Dec1",
+           "Jan2", "Feb2", "Mar2", "Apr2", "May2", "Jun2", 
+           "Jul2", "Aug2", "Sep2", "Oct2", "Nov2", "Dec2",
+           "Jan3", "Feb3", "Mar3", "Apr3", "May3", "Jun3", 
+           "Jul3", "Aug3", "Sep3", "Oct3", "Nov3", "Dec3",
+           "Jan5", "Feb5", "Mar5", "Apr5", "May5", "Jun5", 
+           "Jul5", "Aug5", "Sep5", "Oct5", "Nov5", "Dec5")
+names(worldclimtemp) <- month
+worldclimtemp[[1]]
+worldclimtemp$Mar2
+```
+### 1.4 extract cities data from raster
+```{r}
+Fracities1 <- Fracities[c(1,2,5)]
+Fracities1 <- Fracities1 %>%
+  as.data.frame()
+```
+```{r}
+row.names(Fracities1) <- Fracities$city_name
+Fracities1 <- Fracities1[,1:2]
+```
+```{r}
+Fracities_temp <- terra::extract(worldclimtemp,Fracities1) %>%
+  as_tibble() %>% # 转换数据结构为tibble
+  mutate(cities=Fracities$city_name,.before='Jan1') %>% # 添加一列城市名
+  na.omit() # 删除包含na的行
+Fracities_temp$ID <- NULL # 删除列表中的一列
+```
+## 2. plot
+### 2.1 one city in France
+```{r}
+Lyontemp <- Fracities_temp %>%
+  filter(cities=='Lyon')
+Lyontemp_longer <- Lyontemp %>%
+  pivot_longer(.,cols=2:49,names_to = 'month',values_to = 'temp')
+Lyontemp_longer$cities <- NULL
+```
+```{r}
+Lyontemp_longer <- Lyontemp_longer %>%
+  mutate(month=rep(c('1','2','3','5'),each=12))
+```
+```{r}
+Lyon_compare <- Lyontemp_longer %>%
+  mutate(month=factor(month,levels=c("1","2","3","5")))
+ggplot(Lyon_compare,aes(x=temp,na.rm=TRUE)) +
+  geom_histogram(color="black",binwidth = 5) +
+  labs(title="Ggplot2 faceted histogram of Lyon temperatures",
+       x="Temperature",
+       y="Frequency") +
+  facet_grid(month~.) + # 把十二个月分开来画图
+  theme(plot.title = element_text(hjust = 0.5))
+```
+### 2.2 compare temperatures in France
+```{r}
+Fratempraster <- worldclimtemp %>%
+  terra::crop(.,Fraoutline) %>%
+  terra::mask(.,Fraoutline)
+plot(Fratempraster)
+```
+```{r}
+Fratempdm <- Fratempraster %>%
+  as.data.frame()
+Fratempdm_longer <- Fratempdm %>%
+  pivot_longer(.,cols=1:48,names_to = 'month',values_to ='temp' )
+```
+```{r}
+Fratempdm_longer_Mar <- Fratempdm_longer %>%
+  filter(month=='Mar1'|month=='Mar2'|
+           month=='Mar3'|month=='Mar5')
+```
+```{r}
+Fratempdm_longer_Mar <- Fratempdm_longer_Mar %>%
+  drop_na() %>%
+  mutate(month=factor(month,levels=c("Mar1","Mar2","Mar3","Mar5")))
+ggplot(Fratempdm_longer_Mar,aes(x=temp,na.rm=TRUE)) +
+  geom_histogram(color="black",binwidth = 1) +
+  labs(title="Ggplot2 faceted histogram of French temperatures",
+       x="Temperature",
+       y="Frequency") +
+  facet_grid(month~.) + # 把十二个月分开来画图
+  theme(plot.title = element_text(hjust = 0.5))
+```
+### 2.3 compare temperatures in France
+```{r}
+bardata <- Fracities_temp[,2:25]
+col_avg <- colMeans(bardata)
+bardata <- rbind(bardata,col_avg)
+oribardata <- bardata[26,]
+```
+```{r}
+oribardata_longer <- oribardata %>%
+  pivot_longer(.,cols=1:24,names_to = 'month',values_to = 'temp')
+oribardata_longer <- oribardata_longer %>%
+  mutate(category=rep(c('1','2'),each=12)) %>%
+  mutate(mon=rep(c('1','2','3','4','5','6',
+                   '7','8','9','10','11','12'),2))
+oribardata_longer$mon <- oribardata_longer$mon %>%
+  as.numeric()
+ggbar <- ggplot(oribardata_longer,aes(x=mon,y=temp,color=category,fill=category)) +
+  geom_bar(stat='identity',position = 'dodge',alpha=0.5,width = 0.8,just = 0.5) +
+  scale_x_continuous(limits = c(0,13),breaks = 0:13,labels = c('','1','2','3','4','5','6','7','8','9','10','11','12',''))
+print(ggbar)
+```
+

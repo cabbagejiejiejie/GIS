@@ -1,0 +1,109 @@
+---
+title: "Week_2_maps"
+output: html_document
+date: "2023-10-12"
+---
+
+## 1. load packages
+
+```{r}
+library(maptools)
+library(RColorBrewer)
+library(classInt)
+library(sp)
+library(rgeos)
+library(tmap)
+library(tmaptools)
+library(sf)
+library(rgdal)
+library(geojsonio)
+library(OpenStreetMap)
+library(tidyverse)
+library(dplyr)
+library(janitor)
+library(plotly)
+```
+
+## 2. load data
+
+```{r}
+EW <- st_read(here::here("Week_2_prac",
+                         "Local_Authority_Districts_(December_2015)_Boundaries",
+                         "Local_Authority_Districts_(December_2015)_Boundaries.shp"))
+LondonData <- read.csv("Week_2_prac/LondonData.csv",
+                          header=TRUE,
+                          sep=",",
+                          encoding="latin1")
+```
+
+### 2.1 Pull out London
+
+```{r}
+LondonMap <- EW %>%
+  filter(str_detect(lad15cd,"E09")) # "^E09"与"E09"似乎没区别
+qtm(LondonMap)
+LondonData <- LondonData %>%
+  filter(str_detect(New.code,"E09"))
+```
+
+### 2.2 clean data
+
+```{r}
+LondonData <- LondonData %>%
+  distinct() %>%
+  clean_names()
+LondonMap <- LondonMap %>%
+  clean_names()
+```
+
+## 3. attribute data
+
+```{r}
+BoroughDataMap <- LondonMap %>%
+  merge(.,
+        LondonData,
+        by.x="lad15cd",
+        by.y="new_code",
+        no.dups=TRUE) %>%
+  distinct(.,lad15cd,
+           .keep_all = TRUE)
+```
+
+### 3.1 left join
+
+```{r}
+BoroughDataMap2 <- LondonMap %>%
+  left_join(.,LondonData,
+            by=c("lad15cd"="new_code"))
+```
+
+## 4. simple mapping
+
+```{r}
+tmap_mode("plot")
+qtm(BoroughDataMap,
+    fill="rate_of_job_seekers_allowance_jsa_claimants_2015")
+```
+### 4.1 adding a basemap
+```{r}
+tmaplondon <- BoroughDataMap %>%
+  st_bbox(.) %>%
+  tmaptools::read_osm(.,type="osm",zoom=NULL)
+```
+### 4.2 plot
+```{r}
+tmap_mode("plot")
+tm_shape(tmaplondon)+
+  tm_rgb()+
+  tm_shape(BoroughDataMap)+
+  tm_polygons("rate_of_job_seekers_allowance_jsa_claimants_2015",
+              style="jenks",
+              palette="YlOrBr",
+              midpoint=NA,
+              title="Rate per 1,000 people",
+              alpha = 0.5)+
+  tm_compass(position = c("left","bottom"),type = "arrow")+
+  tm_scale_bar(position = c("left","bottom"))+
+  tm_layout(title = "Job seekers' Allowance Claimants",legend.position = c("right","bottom"))
+```
+

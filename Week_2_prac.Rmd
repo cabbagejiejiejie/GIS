@@ -1,0 +1,281 @@
+---
+title: "Week_2_prac"
+output: html_document
+date: "2023-10-11"
+---
+
+# Week 2 prac
+
+## load library
+
+```{r}
+library(sf)
+library(tidyverse)
+library(dplyr)
+library(janitor)
+library(plotly)
+library(maptools)
+```
+
+## introduction
+
+```{r}
+mycsv <- read_csv("Week_1_prac/fly-tipping-borough.csv")
+```
+
+### show list
+
+```{r}
+ls()
+```
+
+### remove object
+
+```{r}
+rm(mycsv)
+```
+
+### basic plotting
+
+```{r}
+# create some datasets, first a vector of 1-100 and 101-200
+Data1 <- c(1:100)
+Data2 <- c(101:200)
+# plot the data
+plot(Data1,Data2,col="red")
+```
+
+### for help
+
+```{r}
+?plot
+```
+
+### data structures
+
+```{r}
+df <- data.frame(Data1,Data2)
+plot(df,col="green")
+df %>% 
+  head(10)
+df %>%
+  tail(10)
+```
+
+### elements of a data frame
+
+```{r}
+df[2,1]
+df[2,2]
+df[1:10,2]
+df[5:15,]
+df[c(2,3,6),]
+df[,1]
+```
+
+### rename
+
+```{r}
+df <- df %>%
+  dplyr::rename(column1=Data1,column2=Data2)
+```
+
+```{r}
+df %>%
+  dplyr::select(column1)
+```
+
+## reading data
+
+### load data
+
+```{r}
+LondonDataOSK <- read.csv("Week_2_prac/LondonData.csv",
+                          header=TRUE,
+                          sep=",",
+                          encoding="latin1")
+```
+
+### another way to read files
+
+```{r}
+install.packages("here")
+library(here)
+```
+
+```{r}
+```
+
+```{r}
+# LondonDataOSK <- read.csv(here::here("Week_2_prac","LondonData.csv",header=TRUE,sep=",",encoding="latin1"))
+# 无法使用，需请教
+```
+
+### read data from the web directly
+
+```{r}
+LondonData <- read_csv("https://data.london.gov.uk/download/ward-profiles-and-atlas/772d2d64-e8c6-46cb-86f9-e52b4c7851bc/ward-profiles-excel-version.csv",
+                       locale = locale(encoding = "latin1"),
+                       na="n/a")
+```
+
+### examine data
+
+```{r}
+class(LondonData)
+class(LondonDataOSK)
+```
+
+```{r}
+Datatypelist <- LondonData %>%
+  summarise_all(class) %>%
+  pivot_longer(everything(),
+               names_to = "All_variables",
+               values_to = "Variable_class")
+Datatypelist
+```
+
+quickly edit data
+
+```{r}
+LondonData <- edit(LondonData)
+```
+
+quickly summarise data
+
+```{r}
+summary(df)
+LondonData %>%
+  colnames() %>%
+  head(5)
+```
+
+### data manipulation
+
+```{r}
+
+```
+
+#### select rows
+
+```{r}
+LondonBoroughs <- LondonData[626:658,]
+```
+
+#### filter工具
+
+```{r}
+Femalelifeexp <- LondonData %>%
+  filter(.,`Female life expectancy -2009-13`>90) # why we should use the symbol ` ?
+LondonBoroughs <- LondonData %>%
+  filter(str_detect(`New code`,"^E09")) # ^加不加这个符号结果都一致？
+```
+
+#### check
+
+```{r}
+LondonBoroughs$`Ward name`
+```
+
+#### another way to check
+
+```{r}
+LondonBoroughs %>%
+  dplyr::select(`Ward name`) %>%
+  print()
+```
+
+#### 去重
+
+```{r}
+LondonBoroughs <- LondonBoroughs %>%
+  distinct()
+```
+
+#### select columns
+
+```{r}
+LondonBoroughs_dplyrcols <- LondonBoroughs %>%
+  dplyr::select(c(1,19,20,21))
+```
+
+#### another way to select columns
+
+```{r}
+LondonBoroughs_manualcols <- LondonBoroughs[,c(1,19,20,21)] # another way to select columns
+```
+
+#### the third way to select columns
+
+```{r}
+LondonBoroughs_contains <- LondonBoroughs %>%
+  dplyr::select(contains("expectancy"),contains("obese - 2011/12 to 2013/14"),contains("Ward name"))
+```
+#### rename columns
+```{r}
+LondonBoroughs <- LondonBoroughs %>%
+  dplyr::rename(Borough="Ward name") %>%
+  clean_names()
+```
+#### calculate the average and select columns and arrange in descending order
+```{r}
+Life_expectancy <- LondonBoroughs %>%
+  mutate(averagelifeexpectancy=((female_life_expectancy_2009_13+male_life_expectancy_2009_13)/2)) %>%
+  mutate(normalisedlifeexpectancy=averagelifeexpectancy/mean(averagelifeexpectancy)) %>%
+  dplyr::select(new_code,
+                borough,
+                averagelifeexpectancy,
+                normalisedlifeexpectancy) %>%
+  arrange(desc(normalisedlifeexpectancy))
+```
+#### compare the expectancy of London with that of UK
+```{r}
+Life_expectancy2 <- Life_expectancy %>%
+  mutate(UKcompare=case_when(averagelifeexpectancy>81.16~"above UK average",
+                             TRUE~"below UK average"))
+```
+```{r}
+Life_expectancy2_group <- Life_expectancy2 %>%
+  mutate(UKdiff=averagelifeexpectancy-81.16) %>%
+  group_by(UKcompare) %>%
+  summarise(range=max(UKdiff)-min(UKdiff),count=n(),average=mean(UKdiff))
+Life_expectancy2_group
+```
+#### 头大的步骤
+```{r}
+Life_expectancy3 <- Life_expectancy %>%
+  mutate(UKdiff = averagelifeexpectancy-81.16) %>%
+  mutate(across(where(is.numeric),round,3)) %>%
+  mutate(across(UKdiff,round,0)) %>%
+  mutate(UKcompare=case_when(averagelifeexpectancy >= 81~
+                               str_c("equal or above UK average by",
+                                     UKdiff,"years",sep = " "),
+                             TRUE~str_c("below UK average by",
+                                        UKdiff,"years",sep = " "))) %>%
+  group_by(UKcompare) %>%
+  summarise(count=n())
+Life_expectancy3
+```
+接着头大
+```{r}
+Life_expectancy4 <- Life_expectancy %>%
+  mutate(UKdiff=averagelifeexpectancy-81.16) %>%
+  mutate(across(where(is.numeric),round,3)) %>%
+  mutate(across(UKdiff,round,0))
+```
+### plotting
+```{r}
+plot(LondonBoroughs$male_life_expectancy_2009_13,
+     LondonBoroughs$percent_children_in_reception_year_who_are_obese_2011_12_to_2013_14)
+```
+#### pimp my graph
+```{r}
+plot_ly(LondonBoroughs,
+        x= ~male_life_expectancy_2009_13,
+        y= ~percent_children_in_reception_year_who_are_obese_2011_12_to_2013_14,
+        text= ~borough,
+        type="scatter",
+        mode="markers")
+```
+
+

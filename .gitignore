@@ -1,0 +1,16 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# Practical-01-Exclude-Data-Files
+*.csv
+*.xls
+*.xlsx
+*.zip
+*.gz
+*.gzip
+*.feather
+*.geofeather
+*.parquet
+*.geoparquet

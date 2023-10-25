@@ -1,0 +1,191 @@
+---
+title: "Week_3_homework"
+output: html_document
+date: "2023-10-19"
+---
+
+# Week3 Homework!
+
+## 1. load data
+
+### 1.1 load geopackage
+
+```{r}
+library(sf)
+library(here)
+st_layers(here::here('Week_3_prac','gadm41_FRA.gpkg'))
+```
+
+```{r}
+# load the spatial data
+Fraoutline <- st_read(here::here('Week_3_prac','gadm41_FRA.gpkg'),layer='ADM_ADM_0')
+# check the outline
+plot(Fraoutline$geom)
+```
+
+### 1.2 load and manipulate city location
+
+```{r}
+library(readr)
+library(janitor)
+library(dplyr)
+Worldcities <- read_csv(here::here('Week_3_prac','World_Cities.csv')) %>%
+  clean_names()
+# filter French cities
+Fracities <- Worldcities %>%
+  filter(cntry_name=='France')
+```
+
+### 1.3 load raster data
+
+```{r}
+library(raster)
+library(terra)
+Temp <- terra::rast(here::here('Week_3_prac',
+                               'wc2.1_5m_tmax_ACCESS-CM2_ssp126_2081-2100.tif'))
+plot(Temp)
+```
+
+```{r}
+# rename the name of each layer
+month <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+names(Temp) <- month
+Temp[[1]]
+Temp$Mar
+```
+
+### 1.4 raster location
+
+```{r}
+Fracities_simple <- Fracities[c(1,2,5)] %>%
+  as.data.frame()
+row.names(Fracities_simple) <- Fracities_simple$city_name
+Fracities_simple <- Fracities_simple[,1:2]
+```
+
+### 1.5 extract cities data from raster
+
+```{r}
+Fracities_temp <- terra::extract(Temp,Fracities_simple) %>%
+  as_tibble() %>% # 转换数据结构为tibble
+  mutate(cities=Fracities$city_name,.before='Jan') %>% # 添加一列城市名
+  na.omit() # 删除包含na的行
+Fracities_temp$ID <- NULL # 删除列表中的一列
+```
+
+## 2. plotting
+
+### 2.1 histogram of one city
+
+```{r}
+Lyontemp <- Fracities_temp %>%
+  filter(cities=='Lyon')
+```
+
+```{r}
+library(tidyverse)
+# define the breaks in the historgram
+userbreak <- seq(6,36,3) # 创建等差数列
+hist(as.numeric(Lyontemp),
+     breaks=userbreak,
+     col='grey',
+     main='Histogram of Lyon Temperature',
+     xlab='Temperature',
+     ylab='Frequency')
+```
+
+```{r}
+Lyontemp_longer <- Lyontemp %>%
+  pivot_longer(.,cols=2:13,names_to = 'month',values_to = 'temp') %>%
+  as.data.frame()
+```
+
+```{r}
+library(ggplot2)
+Lyongghist <- ggplot(Lyontemp_longer,aes(x=temp)) +
+  geom_histogram(color='white',fill='black',binwidth = 3)+ # 设置数据填充样式
+  labs(title = "Ggplot2 histogram of Lyon annual temperatures",
+                        x="Temperature",
+                        y="Frequency") + # 设置标题
+  geom_vline(data=Lyontemp_longer,aes(xintercept=mean(Lyontemp_longer$temp)),
+             color='red',linetype='dashed') +
+  theme_classic() + # 将ggplot绘制的图设置为极简模式
+  theme(plot.title = element_text(hjust = 0.5)) # 将标题设置居中
+print(Lyongghist)
+```
+
+### 2.2 plot French temp
+
+```{r}
+Fratempraster <- Temp %>%
+  terra::crop(.,Fraoutline) %>%
+  terra::mask(.,Fraoutline)
+plot(Fratempraster)
+```
+
+```{r}
+hist(Fratempraster$Mar,
+     breaks=seq(-10,22,2),
+     col='black',
+     main='French March temperatures',
+     xlab='Temperatures',
+     ylab='Frequency')
+```
+
+```{r}
+# plot with ggplot2
+Fratempdf <- Fratempraster %>%
+  as.data.frame() # transform data type from SpatRaster to data.frame
+gghistFraMar <- ggplot(Fratempdf,aes(x=Mar)) +
+  geom_histogram(color='white',fill='black',binwidth = 1)+
+  labs(title = "Ggplot2 histogram of French March temperatures",
+                        x="Temperature",
+                        y="Frequency") +
+  geom_vline(data=Fratempdf,aes(xintercept=mean(Fratempdf$Mar)),
+             color='red',linetype='dashed') +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+print(gghistFraMar)
+```
+
+### 2.3 plot multiple months
+```{r}
+# 把12个月的数据都转为长表格
+Fratemp_longer_df <- Fratempdf %>%
+  pivot_longer(.,cols = 1:12,names_to = 'month',values_to = 'temp')
+Fra_MarJun <- Fratemp_longer_df %>%
+  filter(.,month=='Mar'|month=='Jun') # 筛选三月和六月的数据
+Fra_MarJun_mean <- Fra_MarJun %>% # 计算三月和六月各自的平均值
+  group_by(month) %>%
+  summarise(mean=mean(temp))
+gghistFra_MarJun <- ggplot(Fra_MarJun,aes(x=temp,color=month,fill=month)) +
+                             geom_histogram(position = 'identity',alpha=0.5) +
+                             geom_vline(data=Fra_MarJun_mean,
+                                        aes(xintercept=mean,color=month),
+                                        linetype='dashed') +
+                             labs(title = 'Ggplot2 histogram of French Mar and Jun temperatures',
+       x='Temperature',
+       y='Frequency') +
+         theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))
+print(gghistFra_MarJun)
+```
+
+### 2.4 plot 12 months
+```{r}
+Fra_12_temp <- Fratemp_longer_df %>%
+  drop_na() %>%
+  mutate(month=factor(month,levels=c("Jan","Feb","Mar",
+                                          "Apr","May","Jun",
+                                          "Jul","Aug","Sep",
+                                          "Oct","Nov","Dec")))
+ggplot(Fra_12_temp,aes(x=temp,na.rm=TRUE)) +
+  geom_histogram(color="black",binwidth = 5) +
+  labs(title="Ggplot2 faceted histogram of French temperatures",
+       x="Temperature",
+       y="Frequency") +
+  facet_grid(month~.) + # 把十二个月分开来画图
+  theme(plot.title = element_text(hjust = 0.5))
+```
+

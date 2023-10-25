@@ -1,0 +1,172 @@
+---
+title: "Week_2_homework"
+output: html_document
+date: "2023-10-12"
+---
+
+# HOMEWORK!
+
+## 1. load library
+
+```{r}
+library(readr)
+library(here)
+library(sf)
+library(tmap)
+library(tmaptools)
+library(tidyverse)
+library(janitor)
+library(OpenStreetMap)
+```
+
+## 2. loda data
+
+### 2.1 load map data
+
+```{r}
+WC <- st_read(here::here("Week_2_prac",
+                         "homework",
+                         "Washington_Counties_with_Natural_Shoreline_washsh_area",
+                         "Washington_Counties_with_Natural_Shoreline_washsh_area.shp"))
+```
+
+### 2.2 check the shapefile
+
+```{r}
+qtm(WC)
+```
+
+### 2.3 load csv
+
+```{r}
+original_data <- read_csv(here::here("Week_2_prac",
+                                     "homework",
+                            "Report_Card_Assessment_Data_2018-19_School_Year_20231012.csv"),
+                          na="NULL")
+```
+
+### 2.4 clean data
+
+#### 2.4.1 clean names and select appropriate rows
+
+```{r}
+school_data <- original_data %>%
+  clean_names()
+school_data <- school_data %>%
+  filter(grade_level == "All Grades") %>%
+  filter(student_group_type == "All") %>%
+  filter(test_subject == "Science")
+```
+
+#### 2.4.2 select appropriate columns
+
+```{r}
+school_data1 <- school_data[c(3,20,22)]
+```
+
+#### 2.4.3 replace "NULL" with "0"
+
+```{r}
+school_data1$count_of_students_expected_to_test[school_data1$count_of_students_expected_to_test == "NULL"] <- 0
+school_data1$count_met_standard[school_data1$count_met_standard == "NULL"] <- 0
+```
+replace "na" with "0"
+```{r}
+school_data1[is.na(school_data1)] <- 0
+```
+
+#### 2.4.4 transform character to numeric
+
+```{r}
+school_data1$count_of_students_expected_to_test <- as.numeric(school_data1$count_of_students_expected_to_test)
+school_data1$count_met_standard <- as.numeric(school_data1$count_met_standard)
+```
+another way to transform character to numeric
+```{r}
+school_data1 <- school_data1 %>%
+  mutate(count_of_students_expected_to_test=(as.numeric(count_of_students_expected_to_test))) %>%
+  mutate(count_met_standard=(as.numeric(count_met_standard)))
+```
+
+
+#### 2.4.5 aggregate rows and sum
+
+```{r}
+school_data2 <- aggregate(.~county,data = school_data1,sum)
+```
+another way to sum
+```{r}
+school_data2 <- school_data1 %>%
+  group_by(county) %>%
+  summarise(students_expected_to_test=sum(count_of_students_expected_to_test),
+            count_met_standard=sum(count_met_standard))
+```
+
+#### 2.4.6 calculate the average of the whole state
+
+```{r}
+sum_col <- colSums(school_data2[,-1])
+sum_col
+state_average <- round((sum_col[2]/sum_col[1]),digits = 3)
+state_average
+```
+
+### 2.5 calculate the percentage
+
+```{r}
+school_data2 <- school_data2 %>%
+  mutate(average_percent=count_met_standard/count_of_students_expected_to_test) %>%
+  mutate(across(where(is.numeric),round,3))
+```
+
+### 2.6 calculate the difference
+
+```{r}
+school_data2 <- school_data2 %>%
+  mutate(difference = average_percent - state_average)
+```
+
+## 3. merge data
+
+```{r}
+b <- toupper(school_data2$county)
+school_data3 <- school_data2
+school_data3$county <- b
+```
+```{r}
+BoroughDatamap <- WC %>%
+  clean_names() %>%
+  merge(.,school_data3,
+        by.x="county",
+        by.y="county")
+```
+
+## 4. plot
+```{r}
+tmap_mode("plot")
+qtm(BoroughDatamap,fill = "difference")
+```
+
+### 4.1 create osm
+```{r}
+tmapwc <- BoroughDatamap %>%
+  st_bbox(.) %>%
+  tmaptools::read_osm(.,type = "osm",zoom=NULL)
+```
+
+### 4.2 plotting
+
+```{r}
+tmap_mode("plot")
+tm_shape(tmapwc) +
+tm_rgb() +
+tm_shape(BoroughDatamap) +
+  tm_polygons("difference",
+              midpoint = 0,
+              title = "County average compared with the state average",
+              alpha = 0.5) +
+  tm_compass(position = c("left","bottom"),type = "arrow") +
+  tm_scale_bar(position = c("left","bottom")) +
+  tm_layout(title = "Difference in students who met standards",legend.position = c("right", "bottom"))
+```
+
