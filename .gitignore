@@ -14,5 +14,9 @@
 *.geofeather
 *.parquet
 *.geoparquet
+*.Rproj
 
 Week_1_prac/
+Week_2_prac/
+Week_3_prac/
+Week_4_prac/
