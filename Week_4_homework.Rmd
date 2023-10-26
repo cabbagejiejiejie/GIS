@@ -1,0 +1,98 @@
+---
+title: "Week_4_homework"
+output: html_document
+date: "2023-10-26"
+---
+
+# Week 4 homework
+
+## 1. load data
+
+### 1.1 load csv data
+```{r}
+library(janitor)
+library(here)
+library(readr)
+
+origin_csv <- read_csv(here::here('Week_4_prac',
+                                  'HDR21-22_Composite_indices_complete_time_series.csv')) %>%
+  clean_names()
+```
+
+choose the correct columns of gender inequality
+```{r}
+library(tidyverse)
+gii <- origin_csv %>%
+  dplyr::select(c(1:4,591:623))
+```
+
+### 1.2 load spatial data
+```{r}
+library(sf)
+library(countrycode)
+world <- st_read(here::here('Week_4_prac','World_Countries_Generalized',
+                            'World_Countries_Generalized.shp'))
+```
+```{r}
+# 通过国家名字转换成iso3代码
+world$iso3 <- countrycode(world$COUNTRY,
+                          origin='country.name',
+                          destination = 'iso3c')
+
+```
+
+
+## 2. manipulate data
+
+### 2.1 manipulate data
+```{r}
+gii_1 <- gii %>% #获得2019与2010年数据差
+  mutate(diff=(gii$gii_2019-gii$gii_2010))
+
+gii_1 <- gii_1[!is.na(gii_1$diff),] # 去掉diff中有na的那一行，是否需要这一步骤还有待研究
+```
+```{r}
+gii_2 <- gii_1 %>%
+  mutate(compare=case_when(diff>0~1,
+                           TRUE~-1)) %>%
+  mutate(compare1=case_when(diff>0~'increasing inequality',
+                            TRUE~'decreasing inequality'))
+```
+
+### 2.2 left join data
+```{r}
+world <- world %>%
+  left_join(.,
+            gii_2,
+            by=c('iso3'='iso3'))
+```
+
+## 3. plot
+
+### 3.1 plot diff
+```{r}
+library(tmap)
+library(tmaptools)
+
+tmap_mode('plot')
+tm_shape(world)+
+  tm_polygons('compare1.x',
+              style='quantile',n=2,
+              palette='-RdYlBu',
+              title='Change of gender inequality')+
+  tm_layout(title='Change of gender inequality between 2010 and 2019',
+            legend.position = c("left", "bottom"))
+```
+
+### 3.1 plot diff
+```{r}
+tmap_mode('plot')
+tm_shape(world)+
+  tm_polygons('gii_2021.x',
+              style='quantile',n=4,
+              palette='YlOrRd',
+              title='Gender inequality')+
+  tm_layout(title='Gender inequality in 2019',
+            legend.position = c("left", "bottom"))
+```
+
