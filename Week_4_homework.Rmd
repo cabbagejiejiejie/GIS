@@ -76,7 +76,7 @@ library(tmaptools)
 
 tmap_mode('plot')
 tm_shape(world)+
-  tm_polygons('compare1.x',
+  tm_polygons('compare1',
               style='quantile',n=2,
               palette='-RdYlBu',
               title='Change of gender inequality')+
@@ -88,8 +88,8 @@ tm_shape(world)+
 ```{r}
 tmap_mode('plot')
 tm_shape(world)+
-  tm_polygons('gii_2021.x',
-              style='quantile',n=4,
+  tm_polygons('gii_2021',
+              style='quantile',n=6,
               palette='YlOrRd',
               title='Gender inequality')+
   tm_layout(title='Gender inequality in 2019',
