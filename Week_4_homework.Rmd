@@ -15,7 +15,9 @@ library(here)
 library(readr)
 
 origin_csv <- read_csv(here::here('Week_4_prac',
-                                  'HDR21-22_Composite_indices_complete_time_series.csv')) %>%
+                                  'HDR21-22_Composite_indices_complete_time_series.csv'),
+                                  locale = locale(encoding = "latin1"),
+                       na = c('na','')) %>%
   clean_names()
 ```
 
