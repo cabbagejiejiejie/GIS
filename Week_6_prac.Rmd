@@ -276,3 +276,123 @@ plot(BluePlaquesSub.ppp,pch=16,cex=0.5, main="Blue Plaques in Harrow")
 plot(teststats, add=T, col = "red")
 ```
 
+### 2.3 Ripley's K test
+```{r}
+k <- BluePlaquesSub.ppp %>%
+  Kest(., correction = "border") %>% # correction = "border" 表示在计算中采用边界修正
+  plot()
+```
+```{r}
+Kval <- as.data.frame(Kest(BluePlaquesSub.ppp, correction = "Ripley"))
+```
+
+```{r}
+k1 <- Kest(BluePlaquesSub.ppp, correction = "Ripley") %>%
+  plot()
+```
+### 2.4 DBSCAN
+```{r}
+library(raster)
+library(fpc)
+```
+```{r}
+# check crs of the Harrow
+st_geometry(BoroughMap)
+st_geometry(Harrow)
+```
+```{r}
+# extract points from the spatial points data frame
+BluePlaquesSubPoints <- BluePlaquesSub %>%
+  coordinates(.) %>% # 根据sf数据提取点的坐标信息，并将之转变为df格式文件
+  as.data.frame()
+```
+```{r}
+db <- BluePlaquesSubPoints %>%
+  fpc::dbscan(., eps = 700, MinPts = 4) # 进行dbscan分析 eps设置半径 MinPts设置最小点数
+```
+```{r}
+# plot the results
+plot(db, BluePlaquesSubPoints, main = "DBSCAN Output", frame = F)
+plot(BoroughMap$geometry, add = TRUE)
+```
+```{r}
+# find suitable eps value based on the knee in plot
+
+library(dbscan)
+
+BluePlaquesSubPoints %>%
+  dbscan::kNNdistplot(., k = 4)
+```
+```{r}
+library(ggplot2)
+
+db
+
+db$cluster # 0为噪点
+```
+```{r}
+# add the cluster membership info back into df
+BluePlaquesSubPoints<- BluePlaquesSubPoints %>%
+  mutate(dbcluster = db$cluster)
+```
+
+```{r}
+# create some conves hull polygons
+
+chulls <- BluePlaquesSubPoints %>%
+  group_by(dbcluster) %>%
+  dplyr::mutate(hull = 1:n(),
+                hull = factor(hull, chull(coords.x1,coords.x2))) %>%
+  arrange(hull)
+```
+```{r}
+# 0 is the noise so drop 0 from df
+chulls <- chulls %>%
+  filter(dbcluster >= 1)
+```
+
+```{r}
+dbplot <- ggplot(data = BluePlaquesSubPoints,
+                 aes(coords.x1,coords.x2, colour=dbcluster, fill=dbcluster))
+
+# add the points in
+dbplot <- dbplot + geom_point()
+
+# now the convex hulls 
+dbplot <- dbplot + geom_polygon(data = chulls, 
+                                aes(coords.x1,coords.x2, group=dbcluster), 
+                                alpha = 0.5) 
+
+dbplot + theme_bw() + coord_equal()
+```
+```{r}
+# add a basemap
+# first get the bbox for Harrow
+HarrowWGSbb <- Harrow %>%
+  st_transform(., 4326) %>%
+  st_bbox()
+```
+```{r}
+library(OpenStreetMap)
+
+basemap <- OpenStreetMap::openmap(c(51.5549876,-0.4040502),c(51.6405356,-0.2671315),
+                         zoom=NULL,
+                         "osm")
+
+# convert the basemap to British National Grid
+basemap_bng <- openproj(basemap, projection = "+init=epsg:27700")
+```
+
+```{r}
+autoplot.OpenStreetMap(basemap_bng)+ 
+  geom_point(data=BluePlaquesSubPoints, 
+             aes(coords.x1,coords.x2, 
+                 colour=dbcluster, 
+                 fill=dbcluster)) + 
+  geom_polygon(data = chulls, 
+               aes(coords.x1,coords.x2, 
+                   group=dbcluster,
+                   fill=dbcluster), 
+               alpha = 0.5) 
+```
+
