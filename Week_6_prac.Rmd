@@ -1,0 +1,278 @@
+---
+title: "Week_6_prac"
+output: html_document
+date: "2023-11-15"
+---
+
+```{r}
+# library packages
+library(spatstat)
+library(here)
+library(sp)
+library(rgeos)
+library(maptools)
+library(tmap)
+library(sf)
+library(geojson)
+library(geojsonio)
+library(tmaptools)
+library(stringr)
+```
+## 1 setting up data
+```{r}
+LondonBoroughs <- st_read(here::here("Week_6_prac","statistical-gis-boundaries-london",
+                                     "ESRI","London_Borough_Excluding_MHW.shp"))
+qtm(LondonBoroughs)
+```
+```{r}
+BoroughMap <- LondonBoroughs %>%
+  dplyr::filter(str_detect(GSS_CODE, "E09")) %>%
+  st_transform(., 27700)
+
+summary(BoroughMap)
+```
+```{r}
+# get the location of all Blue Plagues
+BluePlaques <- st_read(here::here("Week_6_prac","open-plaques-london-2018-04-08.geojson")) %>%
+  st_transform(., 27700)
+
+summary(BluePlaques)
+```
+```{r}
+# plot the blue plagues in the city
+tmap_mode("plot")
+tm_shape(BoroughMap) +
+  tm_polygons(col = NA, alpha = 0.5) +
+tm_shape(BluePlaques) +
+  tm_dots(col = "blue")
+```
+### 1.1 data cleaning
+```{r}
+# remove duplicates
+library(tidyverse)
+library(sf)
+
+BluePlaques <- distinct(BluePlaques)
+```
+
+### 1.2 spatial subsetting
+```{r}
+# 通过BoroughMap数据框的行来筛选BluePlagues中的行
+BluePlaquesSub <- BluePlaques[BoroughMap, , op = st_intersects] # second operator , and blank keep all attributes
+                                                                # op = st_intersects is default
+tmap_mode("plot")
+tm_shape(BoroughMap) +
+  tm_polygons(col = NA, alpha = 0.5) +
+tm_shape(BluePlaquesSub) +
+  tm_dots(col = "blue")
+```
+```{r}
+# another way to filter point
+# test_indices <- st_intersects(BluePlaques, BoroughMap, sparse=FALSE)
+# df_test <- as.data.frame(test_indices)
+
+# BluePlaques_test <- BluePlaques %>%
+#   mutate(., Sum = rowSums(df_test))
+
+# points_test <- BluePlaques_test[BluePlaques_test$Sum == 1, ]
+```
+
+
+### 1.3 spatial joining
+```{r}
+LondonBorough <- st_read(here::here("Week_6_prac","statistical-gis-boundaries-london",
+                                     "ESRI","London_Borough_Excluding_MHW.shp")) %>%
+  st_transform(., 27700)
+```
+```{r}
+OSM <- st_read(here::here("Week_5_prac","greater-london-latest-free.shp",
+                          "gis_osm_pois_a_free_1.shp")) %>%
+  st_transform(., 27700) %>%
+  filter(fclass == "hotel")
+```
+```{r}
+# join_example <-  st_join(OSM, LondonBorough)
+
+# nrow(join_example)
+```
+
+
+```{r}
+# read in csv and transform it into sf by two columns
+Airbnb <- read_csv(here::here("Week_5_prac","listings.csv")) %>%
+  st_as_sf(., coords = c("longitude","latitude"), crs = 4326) %>%
+  st_transform(., 27700) %>%
+  filter(room_type == 'Entire home/apt' & availability_365 =='365')
+```
+```{r}
+# make a function for the join
+Joinfun <- function(data1, data2){
+
+output<- data1%>%
+  st_join(data2,.) %>%
+  add_count(GSS_CODE, name="hotels_in_borough") # add_count 增加一列存储观察值的数量
+
+  return(output)
+}
+```
+```{r}
+# use the function for hotels
+Hotels <- Joinfun(OSM, LondonBorough)
+```
+```{r}
+# then for airbnb
+Airbnb <- Joinfun(Airbnb, LondonBorough)
+```
+```{r}
+# just one row that has number hotels and airbnb
+Hotels <- Hotels %>%
+  group_by(., GSS_CODE, NAME) %>%
+  summarise(`Accomodation count` = unique(hotels_in_borough))
+
+Airbnb <- Airbnb %>%
+  group_by(., GSS_CODE, NAME) %>%
+  summarise(`Accomodation count` = unique(hotels_in_borough))
+```
+```{r}
+# join Airbnb and Hotels
+# since Airbnb and Hotels are sf, so we use st_join
+
+all_accomodation <- st_join(Hotels, Airbnb, join = st_equals) # join = st_equals is very important
+
+head(all_accomodation)
+```
+
+### 1.4 study area
+```{r}
+# select one borough--Harrow
+Harrow <- BoroughMap %>%
+  filter(., NAME == "Harrow")
+
+tm_shape(Harrow) +
+  tm_polygons(col = NA, alpha = 0.5)
+```
+```{r}
+# extract points within Harrow
+BluePlaquesSub <- BluePlaques[Harrow, ]
+```
+```{r}
+# plot to check the data
+tm_shape(Harrow) +
+  tm_polygons(col = NA, alpha = 0.5) +
+tm_shape(BluePlaquesSub) +
+  tm_dots(col = "blue")
+```
+```{r}
+# set a window as the borough boundary
+
+window <- as.owin(Harrow)
+
+plot(window)
+```
+```{r}
+# create a sp object
+BluePlaquesSub <- BluePlaquesSub %>%
+  as(., "Spatial")
+
+# create a ppp object
+BluePlaquesSub.ppp <- ppp(x=BluePlaquesSub@coords[,1],
+                          y=BluePlaquesSub@coords[,2],
+                          window = window)
+```
+```{r}
+BluePlaquesSub.ppp %>%
+  plot(., pch = 16, cex = 0.5, main = "Blue Plaques Harrow")
+# pch设置点类型 cex设置点大小比例 main设置标题
+```
+
+## 2 point pattern analysis
+### 2.1 Kernel Density Estimation
+```{r}
+# library(spatstat)
+
+BluePlaquesSub.ppp %>%
+  density(., sigma = 500) %>%
+  plot()
+```
+```{r}
+# set different sigma
+BluePlaquesSub.ppp %>%
+  density(., sigma=1000) %>%
+  plot()
+```
+
+### 2.2 Quadrat Analysis
+```{r}
+# first plot the points
+plot(BluePlaquesSub.ppp,
+     pch = 16, cex = 0.5, main = "Blue Plaques in Harrow")
+
+# now count the points in that fall in a 6x6 grid
+BluePlaquesSub.ppp %>%
+  quadratcount(., nx = 6, ny = 6) %>%
+  plot(., add = TRUE, col = "red") # add = T 表示在同一张图上添加quadratcount
+```
+```{r}
+# compare observed distribution of points with a statistically likely (Complete Spatial Random) distibution 
+# based on the Poisson distribution
+
+# save the quadratcount result into a table
+Qcount <- BluePlaquesSub.ppp %>%
+  quadratcount(., nx = 6, ny = 6) %>%
+  as.data.frame() %>%
+  dplyr::count(Var1 = Freq) %>% # 计算变量的频数
+  dplyr::rename(Freqquadratcount = n)
+```
+```{r}
+# check data type
+Qcount %>%
+  summarise_all(class)
+```
+```{r}
+# calculate the values
+# Poisson distribution:发生k次事件的可能性
+
+sums <- Qcount %>%
+  mutate(total = Var1 * Freqquadratcount) %>%
+  dplyr::summarise(across(everything(), sum)) %>% # 对所有列进行求和
+  dplyr::select(-Var1) # 选择除Var1以外的所有列
+```
+```{r}
+lambda<- Qcount%>%
+  #calculate lambda
+  mutate(total = Var1 * Freqquadratcount)%>%
+  dplyr::summarise(across(everything(), sum)) %>%
+  mutate(lambda=total/Freqquadratcount) %>%
+  dplyr::select(lambda)%>%
+  pull(lambda)
+```
+```{r}
+# calculate Pr
+QCountTable <- Qcount %>%
+  mutate(Pr = ((lambda^Var1)*exp(-lambda))/factorial(Var1)) %>%
+  mutate(Expected = (round(Pr * sums$Freqquadratcount, 0)))
+```
+```{r}
+# compare the frequency distributions of the observed and expected point patterns
+
+plot(c(1,5),c(0,14), type="n",
+xlab="Number of Blue Plaques (Red=Observed,Blue=Expected)", 
+     ylab="Frequency of Occurances")
+points(QCountTable$Freqquadratcount, 
+       col="Red", 
+       type="o", 
+       lwd=3)
+points(QCountTable$Expected, col="Blue", 
+       type="o", 
+       lwd=3)
+```
+```{r}
+# Chi-Squared test
+
+teststats <- quadrat.test(BluePlaquesSub.ppp, nx = 6, ny = 6)
+```
+```{r}
+plot(BluePlaquesSub.ppp,pch=16,cex=0.5, main="Blue Plaques in Harrow")
+plot(teststats, add=T, col = "red")
+```
+
